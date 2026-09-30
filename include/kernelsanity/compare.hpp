@@ -31,6 +31,16 @@ struct failure {
 };
 namespace detail {
 constexpr std::size_t max_elements = 1048576;
+// Canonical IEEE 754 binary32 boundary corpus. Keep this order stable for replay.
+constexpr std::uint32_t boundary_bits[] = {
+    0x00000000u, 0x80000000u, // Signed zeros.
+    0x00000001u, 0x80000001u, // Smallest signed subnormals.
+    0x00800000u, 0x80800000u, // Smallest signed normal magnitudes.
+    0x7f7fffffu, 0xff7fffffu, // Largest signed finite magnitudes.
+    0x7f800000u, 0xff800000u, // Signed infinities.
+    0x7fc00000u, 0xffc00000u  // Quiet NaNs.
+};
+constexpr std::size_t boundary_count = sizeof(boundary_bits) / sizeof(boundary_bits[0]);
 inline std::size_t elements(const shape& s) {
     if (s.empty()) throw std::invalid_argument("shape must have at least one dimension");
     std::size_t n = 1;
@@ -274,6 +284,7 @@ class comparison {
     std::size_t random_count_ = 0, rank_ = 2, max_dim_ = 64;
     std::uint32_t seed_ = 0;
     double atol_ = 1e-5, rtol_ = 1e-5;
+    bool boundary_values_ = false;
 public:
     comparison(kernel reference, kernel optimized)
         : reference_(std::move(reference)), optimized_(std::move(optimized)) {
@@ -289,6 +300,7 @@ public:
         random_count_ = count; rank_ = rank; max_dim_ = max_dimension; return *this;
     }
     comparison& seed(std::uint32_t value) { seed_ = value; return *this; }
+    comparison& boundary_values() { boundary_values_ = true; return *this; }
     comparison& tolerance(double absolute, double relative = 0) {
         detail::validate_tolerance(absolute, relative);
         atol_ = absolute; rtol_ = relative; return *this;
@@ -302,6 +314,9 @@ public:
             tensor input(detail::elements(s));
             // Defined mapping avoids implementation-dependent uniform distributions.
             for (auto& v : input) v = float(rng() >> 8) / 8388608.0f - 1.0f;
+            if (boundary_values_)
+                for (std::size_t i = 0; i < input.size(); ++i)
+                    input[i] = detail::float_from_bits(detail::boundary_bits[(index % detail::boundary_count + i) % detail::boundary_count]);
             auto expected = reference_(input, s);
             auto actual = optimized_(input, s);
             if (detail::matches(expected, actual, atol_, rtol_)) ++report.passed;

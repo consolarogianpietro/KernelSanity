@@ -19,6 +19,21 @@ auto report = ks::compare(reference, optimized)
 report.save("failures");
 ```
 
+For FP32 boundary inputs, opt in with `.boundary_values()` before `.run()`.
+This replaces uniform input values with a repeating corpus of signed zeros,
+smallest subnormals and normals, largest finite values, infinities, and quiet
+NaNs. Case index shifts the corpus, so twelve single-element cases cover it all:
+
+```cpp
+auto boundary_report = ks::compare(reference, optimized)
+    .shapes(std::vector<ks::shape>(12, ks::shape{1}))
+    .boundary_values().seed(42).run();
+```
+
+Boundary mode still advances the seeded generator for each input element, so
+random shape sequences stay the same when switching modes. Quiet NaNs always
+fail the comparison, even if both kernels return the same NaN.
+
 `result` carries the seed and tolerances used by `run()`. Each failure is saved
 as `case-SEED-INDEX.txt`; saving again to the same path overwrites it. To replay
 an input with the same comparison settings, load the file and supply the kernels:
@@ -63,6 +78,7 @@ ctest --test-dir build --output-on-failure
 ./build/ks_example
 ./build/ks_replay_example
 ./build/ks_replay_example failures/case-42-0.txt
+./build/ks_boundary_example
 ```
 
 The replay example writes one known failure on its first invocation, then loads
@@ -72,7 +88,8 @@ example's kernels. Consumers can use `add_subdirectory` and link
 
 ## Current contract
 
-- Both kernels receive the same contiguous FP32 input, sampled from [-1, 1).
+- Both kernels receive the same contiguous FP32 input. Uniform values in
+  [-1, 1) are the default; the fixed boundary corpus is opt-in.
 - Finite outputs pass when `abs(reference - actual) <= atol + rtol * abs(reference)`.
 - NaNs always fail. Equal signed infinities pass; other infinity comparisons fail.
 - Output length mismatches fail. Kernel exceptions propagate to the caller.
@@ -106,5 +123,6 @@ and driver validation.
 
 ## Development plan
 
-See [ROADMAP.md](ROADMAP.md) for the sequenced milestones and validation gates.
+See [FEATURES.md](FEATURES.md) for the implemented feature inventory and
+[ROADMAP.md](ROADMAP.md) for sequenced milestones and validation gates.
 No FP16 support or smallest-failure claim is exposed in this prototype.

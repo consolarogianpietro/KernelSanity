@@ -1,3 +1,5 @@
 /build*/
 /failures/
 /shrunk-failures/
+/boundary-failures/
+*.swp

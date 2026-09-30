@@ -1,7 +1,7 @@
 # Development plan
 
 KernelSanity stays a small C++17 library for randomized differential testing of
-numerical kernels. Each milestone needs a runnable example, focused tests, and
+numerical kernels. [FEATURES.md](FEATURES.md) records what is already implemented. Each milestone needs a runnable example, focused tests, and
 updated documentation before it is considered complete. Existing seeded input
 and saved-case behavior should remain reproducible.
 
@@ -11,7 +11,7 @@ and saved-case behavior should remain reproducible.
    the existing artifact format. Document exactly how candidates are formed,
    how exceptions are handled, and that greedy shrinking does not prove global
    minimality.
-2. **Boundary input generation.** Add an explicit opt-in mode for signed zeros,
+2. **Boundary input generation — complete.** Add an explicit opt-in mode for signed zeros,
    subnormals, extreme finite values, infinities, and NaNs. Keep the current
    seeded uniform generator as the default. Test exact bit patterns and repeatability.
 3. **Multiple-input adapter design.** Define the smallest useful representation

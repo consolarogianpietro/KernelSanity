@@ -12,6 +12,34 @@ int main() {
     auto broken = [](const ks::tensor& x, const ks::shape&) { auto y = x; y[0] += 1; return y; };
     auto good = ks::compare(identity, identity).random_shapes(100).run();
     require(good.ok() && good.passed == 100);
+    const std::vector<std::uint32_t> boundary_bits = {
+        0x00000000u, 0x80000000u, 0x00000001u, 0x80000001u,
+        0x00800000u, 0x80800000u, 0x7f7fffffu, 0xff7fffffu,
+        0x7f800000u, 0xff800000u, 0x7fc00000u, 0xffc00000u
+    };
+    std::vector<std::uint32_t> observed;
+    auto collect = [&](const ks::tensor& x, const ks::shape&) {
+        observed.push_back(ks::detail::bits(x[0]));
+        return x;
+    };
+    auto boundary = ks::compare(collect, identity)
+        .shapes(std::vector<ks::shape>(12, ks::shape{1})).boundary_values().seed(77).run();
+    require(observed == boundary_bits && boundary.passed == 10 && boundary.failures.size() == 2);
+    observed.clear();
+    ks::compare(collect, identity).shapes(std::vector<ks::shape>(12, ks::shape{1}))
+        .boundary_values().seed(77).run();
+    require(observed == boundary_bits);
+    std::vector<ks::shape> normal_dimensions, boundary_dimensions;
+    auto record_normal = [&](const ks::tensor& x, const ks::shape& s) {
+        normal_dimensions.push_back(s); return x;
+    };
+    auto record_boundary = [&](const ks::tensor& x, const ks::shape& s) {
+        boundary_dimensions.push_back(s); return x;
+    };
+    ks::compare(record_normal, identity).random_shapes(20, 2, 8).seed(99).run();
+    ks::compare(record_boundary, identity).random_shapes(20, 2, 8)
+        .boundary_values().seed(99).run();
+    require(normal_dimensions == boundary_dimensions);
     auto comparison = ks::compare(identity, broken).shapes({{1}, {3, 7}}).random_shapes(10).seed(123).tolerance(.001, .002);
     auto first = comparison.run(), second = comparison.run();
     require(first.seed == 123 && first.atol == .001 && first.rtol == .002);
@@ -41,6 +69,14 @@ int main() {
 
     auto directory = std::filesystem::temp_directory_path() / ("ks-test-" + std::to_string(std::random_device{}()));
     std::filesystem::create_directories(directory);
+    auto boundary_artifact = ks::compare(identity, identity).shapes({{12}})
+        .boundary_values().seed(88).run();
+    require(boundary_artifact.failures.size() == 1);
+    boundary_artifact.save(directory);
+    auto loaded_boundary = ks::load_case(directory / "case-88-0.txt");
+    for (std::size_t i = 0; i < boundary_bits.size(); ++i)
+        require(ks::detail::bits(loaded_boundary.original.input[i]) == boundary_bits[i]);
+    require(!loaded_boundary.replay(identity, identity).ok()); // NaN remains a failure.
     first.save(directory);
     auto path = directory / "case-123-0.txt";
     auto saved = ks::load_case(path);
