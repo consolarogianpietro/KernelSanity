@@ -34,6 +34,25 @@ Boundary mode still advances the seeded generator for each input element, so
 random shape sequences stay the same when switching modes. Quiet NaNs always
 fail the comparison, even if both kernels return the same NaN.
 
+For explicit multi-input cases, include `<kernelsanity/multi_compare.hpp>`.
+Each operand has physical storage, a logical shape, element strides, and an
+offset. A kernel receives `const ks::multi_input&` and returns a flat FP32
+output. For example, a strided vector reduction can be tested as follows:
+
+```cpp
+ks::operand x{{99, 1, 99, 2, 99, 3, 99, 4}, {4}, {2}, 1};
+auto report = ks::compare_multi(reference, optimized)
+    .cases({{x}}).tolerance(1e-5).run();
+report.save("multi-failures");
+auto saved = ks::load_multi_case("multi-failures/multi-case-0.txt");
+auto replayed = saved.replay(reference, optimized);
+```
+
+The logical values here are `{1, 2, 3, 4}`. Multi-input artifacts use v3 and
+can be replayed or reduced with `saved.shrink_values(reference, optimized, budget)`.
+See [the adapter design](docs/multi-input.md) for the view bounds, a GEMM
+example, and the current shrinking limits.
+
 `result` carries the seed and tolerances used by `run()`. Each failure is saved
 as `case-SEED-INDEX.txt`; saving again to the same path overwrites it. To replay
 an input with the same comparison settings, load the file and supply the kernels:
@@ -79,6 +98,7 @@ ctest --test-dir build --output-on-failure
 ./build/ks_replay_example
 ./build/ks_replay_example failures/case-42-0.txt
 ./build/ks_boundary_example
+./build/ks_multi_example
 ```
 
 The replay example writes one known failure on its first invocation, then loads
@@ -102,6 +122,10 @@ example's kernels. Consumers can use `add_subdirectory` and link
   unsupported-version data throws `std::runtime_error`. The earlier v1 format
   lacks tolerance metadata and is explicitly unsupported by `load_case()`.
 - All failures are retained in memory. Saving writes one file per failure.
+- `compare_multi` accepts explicit cases with 1..16 strided operands and at
+  most 1,048,576 total physical FP32 values. It has no random case generator.
+  Its v3 artifacts preserve physical storage and view descriptors; v2 and v3
+  loaders are separate.
 - This is randomized differential testing, not coverage-guided fuzzing. A
   passing result is evidence for the tested inputs, not proof of correctness.
 

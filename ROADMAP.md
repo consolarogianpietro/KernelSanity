@@ -14,10 +14,11 @@ and saved-case behavior should remain reproducible.
 2. **Boundary input generation — complete.** Add an explicit opt-in mode for signed zeros,
    subnormals, extreme finite values, infinities, and NaNs. Keep the current
    seeded uniform generator as the default. Test exact bit patterns and repeatability.
-3. **Multiple-input adapter design.** Define the smallest useful representation
+3. **Multiple-input adapter design — complete.** Define the smallest useful representation
    for at least a reduction and GEMM case, including shapes, layouts, and strides.
    Implement it only after the replay and shrinking contract can preserve those
-   inputs without ambiguity.
+   inputs without ambiguity. The explicit-case adapter, v3 replay, and value
+   shrinking are described in [docs/multi-input.md](docs/multi-input.md).
 4. **Additional dtypes.** Define FP16 and BF16 storage, conversion, accumulation,
    and tolerance semantics before exposing either dtype. Add CPU reference tests
    before considering GPU adapters.

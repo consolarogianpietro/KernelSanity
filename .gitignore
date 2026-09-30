@@ -3,3 +3,5 @@
 /shrunk-failures/
 /boundary-failures/
 *.swp
+/multi-failures/
+/multi-shrunk-failures/
