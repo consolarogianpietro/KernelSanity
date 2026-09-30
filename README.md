@@ -36,6 +36,24 @@ fresh outputs; `saved.original` retains the recorded outputs for inspection.
 The saved seed identifies the original run, but replay uses the stored input
 rather than regenerating it. Kernel exceptions propagate to the caller.
 
+A reproducing saved case can be shrunk with an explicit evaluation budget:
+
+```cpp
+auto shrunk = saved.shrink(reference, optimized, 1000);
+if (!shrunk.report.ok()) shrunk.report.save("shrunk-failures");
+```
+
+The budget counts kernel-pair evaluations, including the initial replay. The
+search keeps rank fixed, tries smaller dimensions in axis order, and retains the
+flattened input prefix when shape size falls. It then tries replacing each value
+with zero or halving it toward zero. Only candidates that still produce a
+numerical or output-length mismatch are accepted. Candidate kernel exceptions
+are rejected; an exception on the initial replay propagates. The search is
+deterministic and greedy, with no global-minimality guarantee. A passing
+`shrunk.report` means the saved failure no longer reproduces; its `evaluations`
+and `budget_exhausted` fields show how much search ran. Save shrunk artifacts to
+a different directory if you want to keep the original file.
+
 ## Build and test
 
 ```sh
@@ -86,11 +104,7 @@ Run the build/test commands above. CI exercises GCC and Clang with address and
 undefined-behavior sanitizers on Linux. GPU adapters will need separate hardware
 and driver validation.
 
-## Next milestones
+## Development plan
 
-1. Shape and value shrinking with clearly defined minimality and budgets.
-2. Boundary inputs: signed zero, subnormals, extreme magnitudes and non-finite values.
-3. Multiple-input adapters for GEMM/reductions, strides and layouts.
-4. Explicit FP16/BF16 storage and accumulation semantics, then GPU adapters.
-
+See [ROADMAP.md](ROADMAP.md) for the sequenced milestones and validation gates.
 No FP16 support or smallest-failure claim is exposed in this prototype.

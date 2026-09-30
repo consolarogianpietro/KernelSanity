@@ -9,6 +9,7 @@
 #include <iomanip>
 #include <limits>
 #include <locale>
+#include <new>
 #include <random>
 #include <sstream>
 #include <stdexcept>
@@ -144,6 +145,11 @@ struct result {
         }
     }
 };
+struct shrink_result {
+    result report;
+    std::size_t evaluations = 0;
+    bool budget_exhausted = false;
+};
 struct saved_case {
     std::uint32_t seed;
     double atol, rtol;
@@ -158,6 +164,80 @@ struct saved_case {
         else report.failures.push_back({original.dimensions, original.input,
                                         std::move(expected), std::move(actual), original.case_index});
         return report;
+    }
+    // Greedy rank-preserving shape reduction followed by input-value reduction.
+    // The budget includes the initial replay; no global minimality is claimed.
+    shrink_result shrink(kernel reference, kernel optimized, std::size_t budget) const {
+        if (!budget) throw std::invalid_argument("shrink budget must be positive");
+        shrink_result output;
+        output.report = replay(reference, optimized);
+        output.evaluations = 1;
+        if (output.report.ok()) return output; // The saved failure no longer reproduces.
+
+        auto& current = output.report.failures.front();
+        auto try_candidate = [&](shape dimensions, tensor input) {
+            if (output.evaluations == budget) return false;
+            ++output.evaluations;
+            try {
+                auto expected = reference(input, dimensions);
+                auto actual = optimized(input, dimensions);
+                if (!detail::matches(expected, actual, atol, rtol)) {
+                    current = {std::move(dimensions), std::move(input),
+                               std::move(expected), std::move(actual), original.case_index};
+                    return true;
+                }
+            } catch (const std::bad_alloc&) {
+                throw;
+            } catch (const std::exception&) {
+                // A candidate rejected by either kernel is not a numerical mismatch.
+            }
+            return false;
+        };
+
+        for (std::size_t axis = 0; axis < current.dimensions.size() && output.evaluations < budget; ++axis) {
+            bool reduced = true;
+            while (reduced && output.evaluations < budget) {
+                reduced = false;
+                const auto d = current.dimensions[axis];
+                const std::size_t choices[] = {1, d / 2, d - 1};
+                for (std::size_t choice = 0; choice < 3; ++choice) {
+                    const auto smaller = choices[choice];
+                    if (!smaller || smaller >= d) continue;
+                    bool duplicate = false;
+                    for (std::size_t earlier = 0; earlier < choice; ++earlier)
+                        duplicate |= choices[earlier] == smaller;
+                    if (duplicate) continue;
+                    auto dimensions = current.dimensions;
+                    dimensions[axis] = smaller;
+                    auto input = current.input;
+                    input.resize(detail::elements(dimensions)); // Keep the flattened prefix.
+                    if (try_candidate(std::move(dimensions), std::move(input))) {
+                        reduced = true;
+                        break;
+                    }
+                    if (output.evaluations == budget) break;
+                }
+            }
+        }
+        for (std::size_t i = 0; i < current.input.size() && output.evaluations < budget; ++i) {
+            bool reduced = true;
+            while (reduced && output.evaluations < budget) {
+                reduced = false;
+                const float value = current.input[i];
+                for (float smaller : {0.0f, value / 2.0f}) {
+                    if (detail::bits(smaller) == detail::bits(value)) continue;
+                    auto input = current.input;
+                    input[i] = smaller;
+                    if (try_candidate(current.dimensions, std::move(input))) {
+                        reduced = true;
+                        break;
+                    }
+                    if (output.evaluations == budget) break;
+                }
+            }
+        }
+        output.budget_exhausted = output.evaluations == budget;
+        return output;
     }
 };
 inline saved_case load_case(const std::filesystem::path& path) {

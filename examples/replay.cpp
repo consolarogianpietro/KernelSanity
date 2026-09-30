@@ -18,5 +18,12 @@ int main(int argc, char** argv) {
     auto saved = ks::load_case(path);
     auto replayed = saved.replay(reference, buggy);
     std::cout << path << ": " << (replayed.ok() ? "passes" : "failure reproduced") << '\n';
+    if (!replayed.ok()) {
+        auto shrunk = saved.shrink(reference, buggy, 100);
+        shrunk.report.save("shrunk-failures");
+        const auto& failure = shrunk.report.failures.front();
+        std::cout << "shrunk to " << failure.input.size() << " input value(s) after "
+                  << shrunk.evaluations << " evaluations\n";
+    }
     return replayed.ok() ? 1 : 0;
 }

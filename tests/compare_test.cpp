@@ -64,6 +64,46 @@ int main() {
     };
     rejects([&] { saved.replay(identity, throwing); });
 
+    auto shrunk = saved.shrink(identity, broken, 32);
+    require(!shrunk.report.ok() && !shrunk.budget_exhausted);
+    require(shrunk.evaluations <= 32);
+    require(shrunk.report.seed == 123 && shrunk.report.atol == .001);
+    require(shrunk.report.failures[0].case_index == 0);
+    require(shrunk.report.failures[0].dimensions == ks::shape{1});
+    require(shrunk.report.failures[0].input == ks::tensor{0.0f});
+    auto repeated_shrink = saved.shrink(identity, broken, 32);
+    require(repeated_shrink.evaluations == shrunk.evaluations);
+    require(repeated_shrink.report.failures[0].input == shrunk.report.failures[0].input);
+    shrunk.report.save(directory / "shrunk");
+    require(!ks::load_case(directory / "shrunk/case-123-0.txt").replay(identity, broken).ok());
+    auto limited = saved.shrink(identity, broken, 1);
+    require(limited.budget_exhausted && limited.evaluations == 1);
+    require(limited.report.failures[0].input == saved.original.input);
+    require(saved.shrink(identity, identity, 8).report.ok());
+    bool invalid_budget = false;
+    try { saved.shrink(identity, broken, 0); }
+    catch (const std::invalid_argument&) { invalid_budget = true; }
+    require(invalid_budget);
+
+    // A value-dependent mismatch can survive halving while zero is rejected.
+    ks::saved_case value_case{5, 0, 0, {{1}, {.8f}, {0}, {1}, 2}};
+    auto value_bug = [](const ks::tensor& x, const ks::shape&) {
+        return ks::tensor{x[0] > .25f ? 1.0f : 0.0f};
+    };
+    auto value_shrunk = value_case.shrink(scalar(0), value_bug, 16);
+    require(!value_shrunk.report.ok() && !value_shrunk.budget_exhausted);
+    require(value_shrunk.report.failures[0].input[0] == .4f);
+
+    // Shape candidates rejected by a kernel do not become shrunk failures.
+    ks::saved_case shape_case{5, 0, 0, {{4}, {1, 2, 3, 4}, {0}, {1}, 3}};
+    auto shape_bug = [](const ks::tensor& x, const ks::shape& s) -> ks::tensor {
+        if (s[0] < 2) throw std::runtime_error("unsupported shape");
+        return {x[0] == 1 && x[1] == 2 ? 1.0f : 0.0f};
+    };
+    auto shape_shrunk = shape_case.shrink(scalar(0), shape_bug, 32);
+    require(shape_shrunk.report.failures[0].dimensions == ks::shape{2});
+    require(shape_shrunk.report.failures[0].input == (ks::tensor{1, 2}));
+
     // Exact FP32 storage preserves sign of zero, infinities and NaN payload bits.
     ks::result edge;
     edge.seed = 9; edge.atol = 0; edge.rtol = 0;
